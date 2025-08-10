@@ -1,0 +1,247 @@
+import cv2
+import numpy as np
+import os
+from typing import List, Dict, Tuple
+
+# Dimensões padrão para normalização de caracteres
+CHAR_SIZE = (50, 80)
+
+
+def process_plate(plate_img: np.ndarray) -> np.ndarray:
+    """
+    Pré-processa a imagem da placa para segmentação.
+    Aplica binarização inversa para obter caracteres brancos em fundo preto,
+    facilitando a detecção de contornos.
+    """
+    gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Kernel de 3x3 é um bom ponto de partida para remover pequenos ruídos
+    kernel = np.ones((3, 3), np.uint8)
+    eroded = cv2.erode(thresh, kernel, iterations=1)
+
+    return eroded
+
+
+def standardize_char(
+    char_img: np.ndarray, size: Tuple[int, int] = CHAR_SIZE
+) -> np.ndarray:
+    """
+    Centraliza e normaliza um caractere para um tamanho padrão, preservando
+    sua proporção original.
+    """
+    h, w = char_img.shape
+    if h == 0 or w == 0:
+        return np.zeros(size[::-1], dtype=np.uint8)
+
+    scale = min(size[0] / w, size[1] / h)
+    nw, nh = int(w * scale), int(h * scale)
+
+    resized = cv2.resize(char_img, (nw, nh), interpolation=cv2.INTER_AREA)
+
+    canvas = np.zeros(size[::-1], dtype=np.uint8)
+    x_offset = (size[0] - nw) // 2
+    y_offset = (size[1] - nh) // 2
+    canvas[y_offset : y_offset + nh, x_offset : x_offset + nw] = resized
+
+    return canvas
+
+
+def segment_characters(binary_image: np.ndarray) -> List[np.ndarray]:
+    """
+    Segmenta caracteres de uma imagem binária.
+    Retorna uma lista de imagens de caracteres padronizados.
+    """
+    contours, _ = cv2.findContours(
+        binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    chars = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+
+        # Filtra contornos baseados em altura e largura para remover ruídos
+        if h > 25 and w > 10:
+            char_img = binary_image[y : y + h, x : x + w]
+            standardized_char = standardize_char(char_img)
+            chars.append((x, standardized_char))
+
+    chars.sort(key=lambda c: c[0])
+
+    return [c[1] for c in chars]
+
+
+def preprocess_char_for_comparison(
+    char_img: np.ndarray,
+) -> Tuple[np.ndarray, List[np.ndarray]]:
+    """
+    Prepara um caractere para a comparação.
+    A binarização é invertida para que os contornos sejam detectados corretamente.
+    """
+    # A imagem já é padronizada, mas pode ser necessário uma binarização extra
+    # para garantir que os contornos sejam limpos.
+    _, thresh = cv2.threshold(char_img, 127, 255, cv2.THRESH_BINARY)
+
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None, None
+
+    # Redimensiona para um tamanho menor e fixo para a comparação
+    resized = cv2.resize(thresh, (50, 50), interpolation=cv2.INTER_NEAREST)
+
+    return resized, contours
+
+
+def character_similarity(
+    img1: np.ndarray,
+    img2: np.ndarray,
+    contours1: List[np.ndarray],
+    contours2: List[np.ndarray],
+    alpha: float = 0.7,
+) -> float:
+    """
+    Calcula a similaridade entre dois caracteres combinando forma e histograma.
+    O 'alpha' foi ajustado para dar mais peso à forma, que é mais distintiva
+    no seu dataset.
+    """
+    # A comparação de formas é muito eficaz para caracteres do seu dataset
+    shape_score = cv2.matchShapes(
+        contours1[0], contours2[0], cv2.CONTOURS_MATCH_I1, 0.0
+    )
+
+    # A comparação de histograma também contribui
+    hist1 = cv2.calcHist([img1], [0], None, [256], [0, 256])
+    hist2 = cv2.calcHist([img2], [0], None, [256], [0, 256])
+    hist_score = cv2.compareHist(hist1, hist2, cv2.HISTCMP_BHATTACHARYYA)
+
+    return alpha * shape_score + (1 - alpha) * hist_score
+
+def load_models(model_dir: str) -> Dict[str, List[np.ndarray]]:
+    """
+    Carrega as imagens de referência (modelos) e padroniza.
+    Suporta múltiplos modelos por caractere, com nomes tipo: A_01.png, 7_02.jpg.
+    Retorna: {"A": [imgA_01, imgA_02, ...], "7": [img7_01, ...], ...}
+    """
+    models: Dict[str, List[np.ndarray]] = {}
+    valid_ext = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
+
+    for filename in os.listdir(model_dir):
+        if not filename.lower().endswith(valid_ext):
+            continue
+
+        stem = os.path.splitext(filename)[0]  # ex: "A_01"
+        parts = stem.split("_", 1)
+        if not parts:
+            continue
+
+        allowed_suffixes = ["00", "01", "02", "05"]
+
+        if parts[1] not in allowed_suffixes:
+            continue
+
+        label = parts[0].upper()  # suporta letras e dígitos
+        # (opcional) validar sufixo de fonte: parts[1] com 2 dígitos
+
+        filepath = os.path.join(model_dir, filename)
+        img = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            continue
+
+        # binariza para manter "caractere branco" em "fundo preto"
+        _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
+        standardized_img = standardize_char(bin_img)
+
+        models.setdefault(label, []).append(standardized_img)
+
+    return models
+
+def best_label_by_median(char_proc, char_contours, models):
+    best_label, best_score = "?", float("inf")
+    for label, variants in models.items():
+        ds = []
+        for model_img in variants:
+            m_proc, m_contours = preprocess_char_for_comparison(model_img)
+            if m_proc is None or not m_contours: 
+                continue
+            ds.append(character_similarity(char_proc, m_proc, char_contours, m_contours))
+        if ds:
+            score = np.median(sorted(ds)[:3])  # mediana dos 3 melhores
+            if score < best_score:
+                best_score, best_label = score, label
+    return best_label, best_score
+
+
+def classify_character(char_img: np.ndarray, models: Dict[str, List[np.ndarray]], allowed_type: str | None = None) -> str:
+    """
+    Classifica um caractere usando a mediana das variantes como critério.
+    allowed_type: 'L' para somente letras, 'D' para somente dígitos, None sem filtro.
+    """
+    # Filtra os modelos por tipo permitido
+    if allowed_type == 'L':
+        filtered = {k: v for k, v in models.items() if k.isalpha()}
+    elif allowed_type == 'D':
+        filtered = {k: v for k, v in models.items() if k.isdigit()}
+    else:
+        filtered = models
+
+    if not filtered:
+        return "?"
+
+    char_proc, char_contours = preprocess_char_for_comparison(char_img)
+    if char_proc is None or not char_contours:
+        return "?"
+
+    label, score = best_label_by_median(char_proc, char_contours, filtered)
+
+    # limiar ajustável ao seu dataset (teste valores entre 0.3 e 0.7)
+    return label if score <= 0.5 else "?"
+
+# ------------------------------
+# Execução principal
+# ------------------------------
+def main(image_path: str, models_path: str):
+    """
+    Função principal para executar o fluxo de reconhecimento de placas.
+    """
+    print("Iniciando o reconhecimento de placa...")
+
+    img = cv2.imread(image_path)
+    if img is None:
+        print(f"Erro: Não foi possível carregar a imagem em {image_path}")
+        return
+
+    processed_plate = process_plate(img)
+    characters = segment_characters(processed_plate)
+
+    if not characters:
+        print("Nenhum caractere detectado.")
+        return
+
+    models = load_models(models_path)
+
+    if not models:
+        print(f"Erro: Nenhum modelo encontrado no diretório {models_path}")
+        return
+
+    # Padrão Mercosul: ABC1D23  -> L,L,L,D,L,D,D
+    pattern = ['L', 'L', 'L', 'D', 'L', 'D', 'D']
+
+    recognized_chars = []
+    for i, char in enumerate(characters):
+        allowed = pattern[i] if i < len(pattern) else None  # se tiver >7, não filtra
+        recognized_chars.append(classify_character(char, models, allowed_type=allowed))
+
+    recognized_plate = "".join(recognized_chars)
+    print("Placa reconhecida:", recognized_plate)
+
+    cv2.imshow("Placa processada", processed_plate)
+    for i, char in enumerate(characters):
+        cv2.imshow(f"Caractere {i}", char)
+
+    print("\nPressione qualquer tecla para fechar as janelas.")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main("mock/PLATE_6.png", "characters")
