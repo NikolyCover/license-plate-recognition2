@@ -219,6 +219,63 @@ def make_hole_adjust_fn(char_proc_bin_255: np.ndarray):
         return HOLE_MISMATCH_PENALTY * diff
     return adjust
 
+## resolver O -> Q
+## resolver R -> X
+
+def _quadrant_sums(img):
+    h, w = img.shape
+    mh, mw = h // 2, w // 2
+    q = lambda a: int(np.count_nonzero(a))
+    return (
+        q(img[0:mh, 0:mw]),      # TL
+        q(img[0:mh, mw:w]),      # TR
+        q(img[mh:h, 0:mw]),      # BL
+        q(img[mh:h, mw:w]),      # BR
+    )
+
+def _left_right_ratio(img):
+    h, w = img.shape
+    left  = np.count_nonzero(img[:, :w//2])
+    right = np.count_nonzero(img[:, w//2:])
+    return left / (right + 1e-6)
+
+def _center_cross_density(img):
+    h, w = img.shape
+    ch, cw = int(0.35*h), int(0.35*w)
+    ys, xs = (h - ch)//2, (w - cw)//2
+    center = img[ys:ys+ch, xs:xs+cw]
+    return np.count_nonzero(center) / (center.size + 1e-6)
+
+def _o_vs_q(img):
+    TL, TR, BL, BR = _quadrant_sums(img)
+    total = TL + TR + BL + BR + 1e-6
+    ratios = [TL/total, TR/total, BL/total, BR/total]
+    br_ratio = ratios[3]
+
+    # Q: BR significativamente mais pesado que os demais (cauda do Q)
+    if br_ratio >= 0.285 and BR >= max(TL, TR, BL) * 1.10:
+        return "Q"
+
+    # O: quase simétrico nos 4 quadrantes
+    if max(abs(r - 0.25) for r in ratios) <= 0.03:
+        return "O"
+
+    return None
+
+def _r_vs_x(img):
+    lr = _left_right_ratio(img)       # >1 => mais massa à esquerda (tronco do R)
+    cross = _center_cross_density(img)  # alto => cruzamento típico do X
+
+    # Priorize tronco forte para R, mesmo com centro relativamente denso
+    if lr >= 1.10:
+        return "R"
+
+    # X tem cruzamento MUITO denso e distribuição mais equilibrada
+    if cross >= 0.70 and lr < 1.05:
+        return "X"
+
+    return None
+
 def classify_character(char_img: np.ndarray, models: Dict[str, List[np.ndarray]], allowed_type: str | None = None) -> str:
     """
     Classifica um caractere usando a mediana das variantes como critério.
@@ -241,6 +298,18 @@ def classify_character(char_img: np.ndarray, models: Dict[str, List[np.ndarray]]
 
     adjust_fn = make_hole_adjust_fn(char_proc)  # usa buracos do caractere observado
     label, score = best_label_by_median(char_proc, char_contours, filtered, adjust_fn=adjust_fn)
+
+    # desempate O vs Q
+    if label in ("O", "Q"):
+        decided = _o_vs_q(char_proc)
+        if decided is not None:
+            label = decided
+
+    # desempate R vs X
+    elif label in ("R", "X"):
+        decided = _r_vs_x(char_proc)
+        if decided is not None:
+            label = decided
 
     return label if score <= F_SCORE else "?"
 
@@ -292,4 +361,4 @@ def main(image_path: str, models_path: str):
 
 
 if __name__ == "__main__":
-    main("mock/PLATE_4.png", "characters")
+    main("mock/PLATE_5.png", "characters")
