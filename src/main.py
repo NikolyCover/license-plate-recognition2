@@ -118,7 +118,7 @@ def character_similarity(
     """
     # A comparação de formas é muito eficaz para caracteres do seu dataset
     shape_score = cv2.matchShapes(
-        contours1[0], contours2[0], cv2.CONTOURS_MATCH_I1, 0.0
+        contours1[0], contours2[0], cv2.CONTOURS_MATCH_I3, 0.0
     )
 
     # A comparação de histograma também contribui
@@ -292,4 +292,4 @@ def main(image_path: str, models_path: str):
 
 
 if __name__ == "__main__":
-    main("mock/PLATE_7.png", "characters")
+    main("mock/PLATE_4.png", "characters")
