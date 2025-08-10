@@ -246,18 +246,52 @@ def _center_cross_density(img):
     center = img[ys:ys+ch, xs:xs+cw]
     return np.count_nonzero(center) / (center.size + 1e-6)
 
+def _hole_offset_norm(img_bin_255: np.ndarray) -> float | None:
+    # mede a distância (em pixels) entre o centro do furo e o centro do contorno externo
+    cnts, hier = cv2.findContours(img_bin_255, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hier is None or not cnts:
+        return None
+    # maior contorno externo
+    outer_idx = max(range(len(cnts)), key=lambda i: cv2.contourArea(cnts[i]))
+    # primeiro filho (furo) desse contorno
+    hole_idx = next((i for i,(nxt,prev,child,parent) in enumerate(hier[0]) if parent == outer_idx), None)
+    if hole_idx is None:
+        return None
+
+    def centroid(c):
+        m = cv2.moments(c)
+        return (m["m10"]/m["m00"], m["m01"]/m["m00"]) if m["m00"] != 0 else (None, None)
+
+    cx_o, cy_o = centroid(cnts[outer_idx])
+    cx_h, cy_h = centroid(cnts[hole_idx])
+    if None in (cx_o, cy_o, cx_h, cy_h):
+        return None
+    dx, dy = (cx_h - cx_o), (cy_h - cy_o)
+    return float(np.hypot(dx, dy))  # norma (pixels)
+
 def _o_vs_q(img):
+    # garante foreground=255
+    img = (img > 0).astype(np.uint8) * 255
+
     TL, TR, BL, BR = _quadrant_sums(img)
     total = TL + TR + BL + BR + 1e-6
-    ratios = [TL/total, TR/total, BL/total, BR/total]
-    br_ratio = ratios[3]
+    br_ratio = BR / total
 
-    # Q: BR significativamente mais pesado que os demais (cauda do Q)
-    if br_ratio >= 0.285 and BR >= max(TL, TR, BL) * 1.10:
+    # assimetria diagonal leve (como já usamos)
+    bin01 = (img > 0).astype(np.uint8)
+    m = cv2.moments(bin01, binaryImage=True)
+    diag_corr = m["mu11"] / (np.sqrt((m["mu20"] + 1e-6)*(m["mu02"] + 1e-6)) + 1e-12)
+
+    # NOVO: deslocamento do furo
+    hole_shift = _hole_offset_norm(img) or 0.0
+
+    # --- decisão ---
+    # Q: BR levemente mais pesado OU (BR um pouco acima + furo deslocado) OU (furo bem deslocado)
+    if br_ratio >= 0.290 or (br_ratio >= 0.272 and hole_shift >= 1.0) or hole_shift >= 1.6:
         return "Q"
 
-    # O: quase simétrico nos 4 quadrantes
-    if max(abs(r - 0.25) for r in ratios) <= 0.03:
+    # O: quadrantes equilibrados + pouco deslocamento e pouca correlação diagonal
+    if max(abs((v/total) - 0.25) for v in (TL, TR, BL, BR)) <= 0.03 and hole_shift <= 0.7 and abs(diag_corr) < 0.02:
         return "O"
 
     return None
@@ -361,4 +395,4 @@ def main(image_path: str, models_path: str):
 
 
 if __name__ == "__main__":
-    main("mock/PLATE_5.png", "characters")
+    main("mock/PLATE_8.jpg", "characters")
