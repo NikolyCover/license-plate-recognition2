@@ -3,9 +3,24 @@ import numpy as np
 import os
 from typing import List, Dict, Tuple
 
-# Dimensões padrão para normalização de caracteres
-CHAR_SIZE = (50, 80)
+CHAR_SIZE = (50, 80) # Dimensões padrão para normalização de caracteres
+F_SCORE = 0.6      # limiar ajustável ao seu dataset (valores entre 0.3 e 0.7)
+LABEL_HOLES = {
+    # Dígitos
+    "0": 0, "1": 0, "2": 0, "3": 0, "4": 0,
+    "5": 0, "6": 1, "7": 0, "8": 2, "9": 0,
 
+    # Letras (A–Z)
+    "A": 1, "B": 2, "C": 0, "D": 1, "E": 0,
+    "F": 0, "G": 0, "H": 0, "I": 0, "J": 0,
+    "K": 0, "L": 0, "M": 0, "N": 0, "O": 1,
+    "P": 1, "Q": 1, "R": 0, "S": 0, "T": 0,
+    "U": 0, "V": 0, "W": 0, "X": 0, "Y": 0,
+    "Z": 0,
+}
+
+HOLE_MISMATCH_PENALTY = 0.25  # penalidade por diferença de 1 buraco
+HOLE_MATCH_BONUS = -0.05 # pequeno bônus quando coincide
 
 def process_plate(plate_img: np.ndarray) -> np.ndarray:
     """
@@ -14,14 +29,14 @@ def process_plate(plate_img: np.ndarray) -> np.ndarray:
     facilitando a detecção de contornos.
     """
     gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, thresh = cv2.threshold(gray, 0, 255,
+     cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     # Kernel de 3x3 é um bom ponto de partida para remover pequenos ruídos
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(thresh, kernel, iterations=1)
 
     return eroded
-
 
 def standardize_char(
     char_img: np.ndarray, size: Tuple[int, int] = CHAR_SIZE
@@ -46,7 +61,6 @@ def standardize_char(
 
     return canvas
 
-
 def segment_characters(binary_image: np.ndarray) -> List[np.ndarray]:
     """
     Segmenta caracteres de uma imagem binária.
@@ -70,7 +84,6 @@ def segment_characters(binary_image: np.ndarray) -> List[np.ndarray]:
 
     return [c[1] for c in chars]
 
-
 def preprocess_char_for_comparison(
     char_img: np.ndarray,
 ) -> Tuple[np.ndarray, List[np.ndarray]]:
@@ -90,7 +103,6 @@ def preprocess_char_for_comparison(
     resized = cv2.resize(thresh, (50, 50), interpolation=cv2.INTER_NEAREST)
 
     return resized, contours
-
 
 def character_similarity(
     img1: np.ndarray,
@@ -155,21 +167,57 @@ def load_models(model_dir: str) -> Dict[str, List[np.ndarray]]:
 
     return models
 
-def best_label_by_median(char_proc, char_contours, models):
+def best_label_by_median(char_proc, char_contours, models, adjust_fn=None):
     best_label, best_score = "?", float("inf")
     for label, variants in models.items():
         ds = []
         for model_img in variants:
             m_proc, m_contours = preprocess_char_for_comparison(model_img)
-            if m_proc is None or not m_contours: 
+            if m_proc is None or not m_contours:
                 continue
-            ds.append(character_similarity(char_proc, m_proc, char_contours, m_contours))
+            s = character_similarity(char_proc, m_proc, char_contours, m_contours)
+            ds.append(s)
         if ds:
             score = np.median(sorted(ds)[:3])  # mediana dos 3 melhores
+            if adjust_fn is not None:
+                score += float(adjust_fn(label))  # aplica bônus/penalidade por label
             if score < best_score:
                 best_score, best_label = score, label
     return best_label, best_score
 
+def count_holes(img_bin_255: np.ndarray) -> int:
+    """
+    Conta 'buracos' (counters) em uma imagem binária 0/255 com foreground branco.
+    Usa RETR_CCOMP para pegar nível externo e seus filhos (furos).
+    """
+    cnts, hierarchy = cv2.findContours(img_bin_255, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return 0
+    holes = 0
+    # hier[0][i] = [next, prev, first_child, parent]
+    for h in hierarchy[0]:
+        parent = h[3]
+        if parent != -1:
+            holes += 1
+
+    print(f"Buracos encontrados: {holes}")
+    return holes
+
+def make_hole_adjust_fn(char_proc_bin_255: np.ndarray):
+    """
+    Cria uma função de ajuste de score por label, baseada no nº de buracos do caractere.
+    Retorna delta a ser somado ao score (positivo = pior, negativo = melhor).
+    """
+    ch = count_holes(char_proc_bin_255)
+    def adjust(label: str) -> float:
+        exp = LABEL_HOLES.get(label)
+        if exp is None:
+            return 0.0
+        diff = abs(ch - exp)
+        if diff == 0:
+            return HOLE_MATCH_BONUS
+        return HOLE_MISMATCH_PENALTY * diff
+    return adjust
 
 def classify_character(char_img: np.ndarray, models: Dict[str, List[np.ndarray]], allowed_type: str | None = None) -> str:
     """
@@ -191,10 +239,10 @@ def classify_character(char_img: np.ndarray, models: Dict[str, List[np.ndarray]]
     if char_proc is None or not char_contours:
         return "?"
 
-    label, score = best_label_by_median(char_proc, char_contours, filtered)
+    adjust_fn = make_hole_adjust_fn(char_proc)  # usa buracos do caractere observado
+    label, score = best_label_by_median(char_proc, char_contours, filtered, adjust_fn=adjust_fn)
 
-    # limiar ajustável ao seu dataset (teste valores entre 0.3 e 0.7)
-    return label if score <= 0.5 else "?"
+    return label if score <= F_SCORE else "?"
 
 # ------------------------------
 # Execução principal
@@ -244,4 +292,4 @@ def main(image_path: str, models_path: str):
 
 
 if __name__ == "__main__":
-    main("mock/PLATE_6.png", "characters")
+    main("mock/PLATE_7.png", "characters")
