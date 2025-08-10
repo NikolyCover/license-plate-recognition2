@@ -350,7 +350,7 @@ def classify_character(char_img: np.ndarray, models: Dict[str, List[np.ndarray]]
 # ------------------------------
 # Execução principal
 # ------------------------------
-def main(image_path: str, models_path: str):
+def recognize_plate(image_path: str, models_path: str):
     """
     Função principal para executar o fluxo de reconhecimento de placas.
     """
@@ -395,4 +395,4 @@ def main(image_path: str, models_path: str):
 
 
 if __name__ == "__main__":
-    main("mock/PLATE_8.jpg", "characters")
+    recognize_plate("mock/PLATE_8.jpg", "characters")
