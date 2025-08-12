@@ -8,9 +8,10 @@ CHAR_SIZE2: Tuple[int, int] = (50, 50)
 MIN_CHAR_HEIGHT = 25
 MIN_CHAR_WIDTH = 10
 F_SCORE: float = 0.6
+MIN_HOLE_AREA = 50  
 
 LABEL_HOLES: Dict[str, int] = {
-    "0": 0,
+    "0": 1,
     "1": 0,
     "2": 0,
     "3": 0,
@@ -19,7 +20,7 @@ LABEL_HOLES: Dict[str, int] = {
     "6": 1,
     "7": 0,
     "8": 2,
-    "9": 0,
+    "9": 1,
     "A": 1,
     "B": 2,
     "C": 0,
@@ -37,7 +38,7 @@ LABEL_HOLES: Dict[str, int] = {
     "O": 1,
     "P": 1,
     "Q": 1,
-    "R": 0,
+    "R": 1,
     "S": 0,
     "T": 0,
     "U": 0,
@@ -47,8 +48,5 @@ LABEL_HOLES: Dict[str, int] = {
     "Y": 0,
     "Z": 0,
 }
-
-HOLE_MISMATCH_PENALTY: float = 0.25
-HOLE_MATCH_BONUS: float = -0.05
 
 ALLOWED_MODEL_SUFFIXES: Set[str] = {"00", "01", "02", "05"}

@@ -2,31 +2,32 @@ import cv2
 import numpy as np
 
 from typing import List, Optional, Tuple
+from config import MIN_HOLE_AREA
 
-from config import LABEL_HOLES, HOLE_MATCH_BONUS, HOLE_MISMATCH_PENALTY
+import cv2
+import numpy as np
 
 def count_holes(img_bin_255: np.ndarray) -> int:
-    """Conta furos com RETR_CCOMP (foreground=255)."""
+    """Conta buracos robustamente com binarização aprimorada, operações morfológicas e verificação de área."""
+    
+    kernel = np.ones((5, 5), np.uint8) 
+    img_bin_dilation = cv2.dilate(img_bin_255, kernel, iterations=1) 
 
-    cnts, hier = cv2.findContours(img_bin_255, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    cnts, hier = cv2.findContours(img_bin_dilation, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
     if hier is None:
         return 0
-    
-    return sum(1 for h in hier[0] if h[3] != -1)
 
+    hole_count = 0    
+    for h in hier[0]:
+        # Se o contorno é um buraco (h[3] != -1), calcular sua área
+        if h[3] != -1:
+            area = cv2.contourArea(cnts[h[0]])
 
-def make_hole_adjust_fn(char_proc_bin_255: np.ndarray):
-    """Cria função delta(score) com base na diferença de furos observados vs esperados."""
-    ch = count_holes(char_proc_bin_255)
+            if area > MIN_HOLE_AREA:
+                hole_count += 1
 
-    def adjust(label: str) -> float:
-        diff = abs(ch - LABEL_HOLES.get(label, 0))
-
-        return HOLE_MATCH_BONUS if diff == 0 else HOLE_MISMATCH_PENALTY * diff
-
-    return adjust
-
+    return hole_count
 
 def _quadrant_sums(img: np.ndarray) -> Tuple[int, int, int, int]:
     h, w = img.shape
@@ -35,14 +36,12 @@ def _quadrant_sums(img: np.ndarray) -> Tuple[int, int, int, int]:
 
     return q(img[:mh, :mw]), q(img[:mh, mw:]), q(img[mh:, :mw]), q(img[mh:, mw:])
 
-
 def _left_right_ratio(img: np.ndarray) -> float:
     h, w = img.shape
 
     return np.count_nonzero(img[:, : w // 2]) / (
         np.count_nonzero(img[:, w // 2 :]) + 1e-6
     )
-
 
 def _center_cross_density(img: np.ndarray) -> float:
     h, w = img.shape
@@ -51,7 +50,6 @@ def _center_cross_density(img: np.ndarray) -> float:
     center = img[ys : ys + ch, xs : xs + cw]
 
     return np.count_nonzero(center) / (center.size + 1e-6)
-
 
 def _hole_offset_norm(img: np.ndarray) -> Optional[float]:
     """Distância entre centroides do contorno externo e do furo."""
@@ -78,7 +76,6 @@ def _hole_offset_norm(img: np.ndarray) -> Optional[float]:
         return None
 
     return float(np.hypot(cx_h - cx_o, cy_h - cy_o))
-
 
 def o_vs_q(img: np.ndarray) -> Optional[str]:
     """Desempate O/Q combinando BR, μ11 e deslocamento do furo (mesmos limiares atuais)."""
