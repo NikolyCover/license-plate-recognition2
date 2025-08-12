@@ -9,7 +9,7 @@ from classify import classify_character
 from utils import save_artifacts
 
 
-def recognize_plate(
+def recognize_plate( 
     image_path: str,
     models_path: str,
     pattern: Optional[List[str]] = None,
@@ -21,13 +21,13 @@ def recognize_plate(
     if img is None:
         return "", None
 
-    eroded, gray, thr = process_plate(img)
+    eroded, gray, binary = process_plate(img)
     chars_std, boxes = segment_characters(eroded)
 
-    arts = PipelineArtifacts(
+    artifacts = PipelineArtifacts(
         original_bgr=img.copy() if collect_artifacts else None,
         gray=gray if collect_artifacts else None,
-        binary_inv_otsu=thr if collect_artifacts else None,
+        binary_inv_otsu=binary if collect_artifacts else None,
         eroded=eroded if collect_artifacts else None,
     )
 
@@ -36,7 +36,7 @@ def recognize_plate(
             raw = eroded[y : y + h, x : x + w]
             proc50, cnts = preprocess_char_for_comparison(std)
 
-            arts.segmented.append(
+            artifacts.segmented.append(
                 SegmentArtifact(
                     bbox_x=x,
                     raw_crop=raw,
@@ -47,25 +47,25 @@ def recognize_plate(
             )
 
     if not chars_std:
-        return "", arts
+        return "", artifacts
     
     models = load_models(models_path)
 
     if not models:
-        return "", arts
+        return "", artifacts
 
     pattern = pattern or ["L", "L", "L", "D", "L", "D", "D"]
-    out = []
+    result = []
 
-    for i, ch in enumerate(chars_std):
+    for i, char in enumerate(chars_std):
         allowed = pattern[i] if i < len(pattern) else None
         
-        out.append(classify_character(ch, models, allowed_type=allowed))
+        result.append(classify_character(char, models, allowed_type=allowed))
 
-    if arts:
-        save_artifacts(arts, "out_artifacts")
+    if artifacts:
+        save_artifacts(artifacts, "out_artifacts")
 
-    return "".join(out), arts
+    return "".join(result), artifacts
 
 
 if __name__ == "__main__":

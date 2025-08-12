@@ -17,7 +17,7 @@ def preprocess_char_for_comparison(
     return cv2.resize(thr, (50, 50), interpolation=cv2.INTER_NEAREST), contours
 
 
-def character_similarity(
+def calculate_character_similarity(
     img1: np.ndarray,
     img2: np.ndarray,
     contours1: List[np.ndarray],

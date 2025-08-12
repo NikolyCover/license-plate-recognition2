@@ -9,10 +9,10 @@ from config import CHAR_SIZE
 def process_plate(plate_bgr: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Cinza -> Otsu INV -> erosão leve. Retorna (eroded, gray, thresh_inv)."""
     gray = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2GRAY)
-    _, thresh_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    eroded = cv2.erode(thresh_inv, np.ones((3, 3), np.uint8), iterations=1)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    eroded = cv2.erode(binary, np.ones((3, 3), np.uint8), iterations=1)
 
-    return eroded, gray, thresh_inv
+    return eroded, gray, binary
 
 
 def standardize_char(

@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-from similarity import preprocess_char_for_comparison, character_similarity
+from similarity import preprocess_char_for_comparison, calculate_character_similarity
 from heuristics import make_hole_adjust_fn, o_vs_q, r_vs_x
 from config import F_SCORE
 
@@ -12,7 +12,7 @@ def best_label_by_median(
     """Mediana dos 3 melhores scores entre variantes por rótulo (menor=melhor)."""
     best_label, best_score = "?", float("inf")
 
-    for label, variants in models.items():
+    for labels, variants in models.items():
         ds = []
 
         for m in variants:
@@ -21,15 +21,15 @@ def best_label_by_median(
             if m_proc is None or not m_cnt:
                 continue
 
-            ds.append(character_similarity(char_proc, m_proc, char_contours, m_cnt))
+            ds.append(calculate_character_similarity(char_proc, m_proc, char_contours, m_cnt))
         if ds:
             score = float(np.median(sorted(ds)[:3]))
 
             if adjust_fn is not None:
-                score += float(adjust_fn(label))
+                score += float(adjust_fn(labels))
 
             if score < best_score:
-                best_score, best_label = score, label
+                best_score, best_label = score, labels
 
     return best_label, best_score
 
