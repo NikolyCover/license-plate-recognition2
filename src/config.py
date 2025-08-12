@@ -7,7 +7,7 @@ CHAR_SIZE: Tuple[int, int] = (50, 80)
 CHAR_SIZE2: Tuple[int, int] = (50, 50)
 MIN_CHAR_HEIGHT = 25
 MIN_CHAR_WIDTH = 10
-F_SCORE: float = 0.6
+F_SCORE: float = 0.7
 MIN_HOLE_AREA = 50  
 
 LABEL_HOLES: Dict[str, int] = {
