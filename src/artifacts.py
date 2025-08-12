@@ -4,12 +4,11 @@ import numpy as np
 
 @dataclass
 class SegmentArtifact:
-    """Etapas por caractere: crop original, padronizado e 50x50 p/ classificador."""
     bbox_x: int
     raw_crop: np.ndarray
     standardized: np.ndarray
     proc50: Optional[np.ndarray] = None
-    contours: Optional[List[np.ndarray]] = None  # para matchShapes
+    contours: Optional[List[np.ndarray]] = None 
 
 @dataclass
 class PipelineArtifacts:

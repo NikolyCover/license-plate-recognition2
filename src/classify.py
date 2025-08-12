@@ -5,7 +5,6 @@ from similarity import preprocess_char_for_comparison, calculate_character_simil
 from heuristics import make_hole_adjust_fn, o_vs_q, r_vs_x
 from config import F_SCORE
 
-
 def best_label_by_median(
     char_proc, char_contours, models, adjust_fn=None
 ) -> Tuple[str, float]:

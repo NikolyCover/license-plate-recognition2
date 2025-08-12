@@ -5,7 +5,6 @@ from typing import List, Optional, Tuple
 
 from config import LABEL_HOLES, HOLE_MATCH_BONUS, HOLE_MISMATCH_PENALTY
 
-
 def count_holes(img_bin_255: np.ndarray) -> int:
     """Conta furos com RETR_CCOMP (foreground=255)."""
 

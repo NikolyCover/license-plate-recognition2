@@ -2,12 +2,12 @@ from typing import List, Optional, Tuple
 import cv2
 
 from artifacts import PipelineArtifacts, SegmentArtifact
-from preprocessing import process_plate, segment_characters
+from preprocessing import preprocess_plate, segment_characters
 from similarity import preprocess_char_for_comparison
 from load_models import load_models
 from classify import classify_character
 from utils import save_artifacts
-
+from config import PLATE_PATTERN
 
 def recognize_plate( 
     image_path: str,
@@ -15,13 +15,12 @@ def recognize_plate(
     pattern: Optional[List[str]] = None,
     collect_artifacts: bool = True,
 ) -> Tuple[str, Optional[PipelineArtifacts]]:
-    """Executa o fluxo completo e (opcionalmente) retorna todas as imagens intermediárias."""
     img = cv2.imread(image_path)
 
     if img is None:
         return "", None
 
-    eroded, gray, binary = process_plate(img)
+    eroded, gray, binary = preprocess_plate(img)
     chars_std, boxes = segment_characters(eroded)
 
     artifacts = PipelineArtifacts(
@@ -54,7 +53,7 @@ def recognize_plate(
     if not models:
         return "", artifacts
 
-    pattern = pattern or ["L", "L", "L", "D", "L", "D", "D"]
+    pattern = pattern or PLATE_PATTERN
     result = []
 
     for i, char in enumerate(chars_std):

@@ -3,17 +3,36 @@ import numpy as np
 
 from typing import List, Tuple
 
-from config import CHAR_SIZE
+from config import CHAR_SIZE, MIN_CHAR_HEIGHT, MIN_CHAR_WIDTH
 
-
-def process_plate(plate_bgr: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Cinza -> Otsu INV -> erosão leve. Retorna (eroded, gray, thresh_inv)."""
+def preprocess_plate(plate_bgr: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     gray = cv2.cvtColor(plate_bgr, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     eroded = cv2.erode(binary, np.ones((3, 3), np.uint8), iterations=1)
 
     return eroded, gray, binary
 
+def segment_characters(
+    binary_image: np.ndarray,
+) -> Tuple[List[np.ndarray], List[Tuple[int, int, int, int]]]:
+    """Segmenta contornos e retorna (chars_std, caixas)."""
+    contours, _ = cv2.findContours(
+        binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    items = []
+
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+
+        if h > MIN_CHAR_HEIGHT and w > MIN_CHAR_WIDTH:
+            std_char_image = standardize_char(binary_image[y : y + h, x : x + w])
+
+            items.append((x, std_char_image, (x, y, w, h)))
+
+    items.sort(key=lambda t: t[0])
+
+    return [t[1] for t in items], [t[2] for t in items]
 
 def standardize_char(
     char_img: np.ndarray, size: Tuple[int, int] = CHAR_SIZE
@@ -36,26 +55,3 @@ def standardize_char(
     canvas[y0 : y0 + nh, x0 : x0 + nw] = resized
 
     return canvas
-
-
-def segment_characters(
-    binary_image: np.ndarray,
-) -> Tuple[List[np.ndarray], List[Tuple[int, int, int, int]]]:
-    """Segmenta contornos com h>25 e w>10; retorna (chars_std, caixas)."""
-    contours, _ = cv2.findContours(
-        binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    items = []
-
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-
-        if h > 25 and w > 10:
-            std = standardize_char(binary_image[y : y + h, x : x + w])
-
-            items.append((x, std, (x, y, w, h)))
-
-    items.sort(key=lambda t: t[0])
-
-    return [t[1] for t in items], [t[2] for t in items]

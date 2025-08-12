@@ -1,6 +1,12 @@
 from typing import Dict, Tuple, Set
 
+# Padrão fixo para a placa (L = Letra, D = Dígito)
+PLATE_PATTERN = ["L", "L", "L", "D", "L", "D", "D"]
+
 CHAR_SIZE: Tuple[int, int] = (50, 80)
+CHAR_SIZE2: Tuple[int, int] = (50, 50)
+MIN_CHAR_HEIGHT = 25
+MIN_CHAR_WIDTH = 10
 F_SCORE: float = 0.6
 
 LABEL_HOLES: Dict[str, int] = {

@@ -7,7 +7,6 @@ from typing import Dict, List
 from preprocessing import standardize_char
 from config import ALLOWED_MODEL_SUFFIXES
 
-
 def load_models(model_dir: str) -> Dict[str, List[np.ndarray]]:
     """Lê modelos <LABEL>_<SUFIXO>.*; binariza INV e padroniza; retorna dict[label]=[imgs]."""
     models: Dict[str, List[np.ndarray]] = {}
