@@ -17,6 +17,7 @@ def recognize_plate(
 ) -> Tuple[str, Optional[PipelineArtifacts]]:
     """Executa o fluxo completo e (opcionalmente) retorna todas as imagens intermediárias."""
     img = cv2.imread(image_path)
+
     if img is None:
         return "", None
 
@@ -34,6 +35,7 @@ def recognize_plate(
         for (x, y, w, h), std in zip(boxes, chars_std):
             raw = eroded[y : y + h, x : x + w]
             proc50, cnts = preprocess_char_for_comparison(std)
+
             arts.segmented.append(
                 SegmentArtifact(
                     bbox_x=x,
@@ -46,7 +48,9 @@ def recognize_plate(
 
     if not chars_std:
         return "", arts
+    
     models = load_models(models_path)
+
     if not models:
         return "", arts
 
@@ -55,6 +59,7 @@ def recognize_plate(
 
     for i, ch in enumerate(chars_std):
         allowed = pattern[i] if i < len(pattern) else None
+        
         out.append(classify_character(ch, models, allowed_type=allowed))
 
     if arts:
